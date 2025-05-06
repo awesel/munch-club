@@ -36,8 +36,8 @@ export default function DashboardPage() {
           return;
         }
         
-        // If survey is completed, redirect to availability
-        router.push('/availability');
+        // Just set loading to false instead of redirecting to availability
+        setIsLoading(false);
       } catch (err) {
         console.error("Error checking user status:", err);
         setIsLoading(false);
@@ -52,61 +52,69 @@ export default function DashboardPage() {
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-        <Header title="Meal App" />
+        <Header title="Munch Club" />
         <Spinner role="status" />
       </div>
     );
   }
 
-  // Show the main landing page if not logged in
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Header title="Meal App" />
+      <Header title="Munch Club" />
       <main className="flex flex-col items-center justify-center pt-24 px-4">
-        <div className="max-w-3xl text-center mb-8">
-          <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
-            Stop eating alone. Find who's free on munch club
-          </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-            Meet new people, have great conversations, and enjoy a meal together.
-            Sign in with your Stanford email to get started.
-          </p>
-        </div>
+        {!user ? (
+          <>
+            <div className="max-w-3xl text-center mb-8">
+              <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+                Stop eating alone. Find who's free on munch club
+              </h1>
+              <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
+                Meet new people, have great conversations, and enjoy a meal together.
+                Sign in with your Stanford email to get started.
+              </p>
+            </div>
+            <div className="w-full max-w-md space-y-4 flex flex-col items-center">
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">
+                Please sign in with Google using your Stanford email account
+              </p>
+              {/* Sign-in button is in the header */}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="max-w-3xl text-center mb-8">
+              <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+                Welcome to Munch Club
+              </h1>
+              <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
+                Ready to connect with other Stanford students over a meal?
+              </p>
+            </div>
+            <div className="w-full max-w-[640px] space-y-4">
+              <Button 
+                onClick={() => router.push('/availability')}
+                aria-label="Set your availability"
+              >
+                Set Availability
+              </Button>
 
-        {!user && (
-          <div className="w-full max-w-md space-y-4 flex flex-col items-center">
-            <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">
-              Please sign in with Google using your Stanford email account
-            </p>
-            {/* Sign-in button is in the header */}
-          </div>
-        )}
+              <Button 
+                onClick={() => router.push('/matches')} 
+                aria-label="View matches"
+                variant="secondary"
+              >
+                View Matches
+              </Button>
 
-        {user && (
-          <div className="w-full max-w-[640px] space-y-4">
-            <Button 
-              onClick={() => router.push('/availability')}
-              aria-label="Set your availability"
-            >
-              Set Availability
-            </Button>
-
-            <Button 
-              onClick={() => router.push('/matches')} 
-              aria-label="View matches"
-              variant="secondary"
-            >
-              View Matches
-            </Button>
-
-            <Button 
-              onClick={() => router.push('/survey')} 
-              aria-label="Update preferences"
-              variant="secondary"
-            >
-              Update Preferences
-            </Button>
-          </div>
+              <Button 
+                onClick={() => router.push('/survey')} 
+                aria-label="Update preferences"
+                variant="secondary"
+              >
+                Update Preferences
+              </Button>
+            </div>
+          </>
         )}
       </main>
     </div>

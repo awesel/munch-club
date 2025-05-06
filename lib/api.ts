@@ -15,6 +15,7 @@ import {
   QueryDocumentSnapshot,
   FirestoreError,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { User } from "firebase/auth"; // Import User type
@@ -158,6 +159,8 @@ export interface UserSurveyData {
   conversationPace: string;
   foodPersonality: string;
   companionPetPeeve: string;
+  favoriteDiningHalls: string[];
+  phoneNumber: string;
 }
 
 const usersCollection = collection(db, "users");
@@ -395,12 +398,30 @@ export interface Match {
   matchUser: UserProfile;
   suggestedTime: Timestamp;
   suggestedLocation: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'pending' | 'accepted' | 'matched' | 'declined';
+  createdAt: Timestamp;
+  acceptedBy?: {
+    [userId: string]: {
+      timestamp: Timestamp;
+      isFirst: boolean;
+    }
+  };
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: 'match_complete' | 'new_match' | 'received_text';
+  content: string;
+  relatedUserId?: string;
+  relatedMatchId?: string;
+  read: boolean;
   createdAt: Timestamp;
 }
 
 const matchesCollection = collection(db, "matches");
 const locationsCollection = collection(db, "locations");
+const notificationsCollection = collection(db, "notifications");
 
 // Function to find potential matches based on availability and preferences
 export const findPotentialMatches = async (userId: string): Promise<Match[]> => {
@@ -482,25 +503,90 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
     
     const mealLocations = locations.length > 0 ? locations : defaultLocations;
     
-    // For demo purposes, we'll create matches with random users and times
-    // In a real app, you'd use a more sophisticated matching algorithm
-    for (const otherUser of availableUsers.slice(0, 3)) { // Limit to 3 matches for demo
+    // Get current user's profile to access their favorite dining halls
+    const currentUserProfile = await getUserProfile(userId);
+    const userFavoriteDiningHalls = currentUserProfile?.surveyData?.favoriteDiningHalls || [];
+    
+    // Sort available users by dining hall preference overlap
+    const usersWithOverlapInfo = await Promise.all(
+      availableUsers.map(async (user) => {
+        // If user has no survey data, assume no overlap
+        if (!user.surveyData?.favoriteDiningHalls) {
+          return { user, overlap: 0, diningHalls: [] };
+        }
+        
+        // Find overlapping dining halls
+        const otherUserDiningHalls = user.surveyData.favoriteDiningHalls;
+        const overlappingDiningHalls = otherUserDiningHalls.filter(hall => 
+          userFavoriteDiningHalls.includes(hall)
+        );
+        
+        return { 
+          user, 
+          overlap: overlappingDiningHalls.length,
+          diningHalls: overlappingDiningHalls.length > 0 ? overlappingDiningHalls : otherUserDiningHalls
+        };
+      })
+    );
+    
+    // Sort users with most dining hall overlap first
+    usersWithOverlapInfo.sort((a, b) => b.overlap - a.overlap);
+    
+    // Limit to 3 matches for demo purposes
+    const usersToMatch = usersWithOverlapInfo.slice(0, 3);
+    
+    for (const { user: otherUser, overlap, diningHalls } of usersToMatch) {
       // Check if already in matches
       if (matchedUsers.includes(otherUser.uid)) continue;
       
       matchedUsers.push(otherUser.uid);
       
-      // Pick a random available day and time
-      const randomDayIndex = Math.floor(Math.random() * availableDays.length);
-      const matchDay = availableDays[randomDayIndex];
+      // FIXED: Instead of picking a random day, we need to find a time that the user is actually available
+      // Get a valid day and time from the user's availability
+      let validMatchFound = false;
+      let matchDay = '';
+      let matchTime = '';
+      let matchDate: Date | null = null;
       
-      // Convert the date string to a Date object and set meal hour (e.g., 12 PM)
-      const [year, month, day] = matchDay.split('-').map(Number);
-      const matchDate = new Date(year, month - 1, day, 12, 0); // noon
+      // Randomly shuffle the available days to avoid always picking the first day
+      const shuffledDays = [...availableDays].sort(() => 0.5 - Math.random());
       
-      // Pick a random location
-      const randomLocationIndex = Math.floor(Math.random() * mealLocations.length);
-      const matchLocation = mealLocations[randomLocationIndex];
+      for (const day of shuffledDays) {
+        const availableTimes = userAvailability.availability[day];
+        
+        if (availableTimes && availableTimes.length > 0) {
+          // Pick a random time from the available times for this day
+          const randomTimeIndex = Math.floor(Math.random() * availableTimes.length);
+          matchTime = availableTimes[randomTimeIndex];
+          matchDay = day;
+          
+          // Parse the date and time
+          const [year, month, dayNum] = matchDay.split('-').map(Number);
+          const [hours, minutes] = matchTime.split(':').map(Number);
+          
+          matchDate = new Date(year, month - 1, dayNum, hours, minutes);
+          validMatchFound = true;
+          break;
+        }
+      }
+      
+      // Skip if no valid match time found
+      if (!validMatchFound || !matchDate) {
+        continue;
+      }
+      
+      // Pick location based on dining hall preferences
+      let matchLocation;
+      
+      if (diningHalls.length > 0) {
+        // If there are overlapping or at least one user's dining halls, pick from those
+        const randomDiningHallIndex = Math.floor(Math.random() * diningHalls.length);
+        matchLocation = diningHalls[randomDiningHallIndex];
+      } else {
+        // Fallback to default locations if no dining halls are available
+        const randomLocationIndex = Math.floor(Math.random() * mealLocations.length);
+        matchLocation = mealLocations[randomLocationIndex];
+      }
       
       // Create a new match document
       const newMatch: Omit<Match, 'id'> = {
@@ -531,7 +617,7 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
 };
 
 // Accept a match
-export const acceptMatch = async (userId: string, matchId: string): Promise<void> => {
+export const acceptMatch = async (userId: string, matchId: string): Promise<{status: string; phoneNumber?: string}> => {
   try {
     const matchRef = doc(db, "matches", matchId);
     const matchDoc = await getDoc(matchRef);
@@ -540,23 +626,85 @@ export const acceptMatch = async (userId: string, matchId: string): Promise<void
       throw new Error("Match not found");
     }
     
-    const matchData = matchDoc.data();
+    const matchData = matchDoc.data() as Match;
     
-    // Verify this match belongs to the user
-    if (matchData.userId !== userId) {
+    // Get the other user's ID
+    let otherUserId: string;
+    if (matchData.userId === userId) {
+      // Current user is the creator of the match
+      otherUserId = matchData.matchUserId;
+    } else if (matchData.matchUserId === userId) {
+      // Current user is the matched user
+      otherUserId = matchData.userId;
+    } else {
+      // This match does not belong to the user
       throw new Error("You don't have permission to accept this match");
     }
     
-    // Update match status
-    await updateDoc(matchRef, {
-      status: 'accepted'
+    // Check if the match is already matched or declined
+    if (matchData.status === 'matched') {
+      return { status: 'already_matched' };
+    }
+    
+    if (matchData.status === 'declined') {
+      throw new Error("This match was declined and cannot be accepted");
+    }
+    
+    // Begin a transaction to ensure consistency
+    const batch = writeBatch(db);
+    
+    // Default: First user accepting the match
+    let isFirstAcceptor = true;
+    let phoneNumber = undefined;
+    let newStatus = 'accepted';
+    
+    // Check if the other user has already accepted
+    if (matchData.status === 'accepted' && matchData.acceptedBy) {
+      // Other user already accepted, this is the second acceptance
+      isFirstAcceptor = false;
+      newStatus = 'matched';
+      
+      // Get other user's profile to get their phone number
+      const otherUserProfile = await getUserProfile(otherUserId);
+      if (otherUserProfile?.surveyData?.phoneNumber) {
+        phoneNumber = otherUserProfile.surveyData.phoneNumber;
+      }
+      
+      // Create notification for first user
+      const firstUserNotificationRef = doc(notificationsCollection);
+      const firstUserNotification: Notification = {
+        id: firstUserNotificationRef.id,
+        userId: otherUserId,
+        type: 'match_complete',
+        content: `${matchData.status === 'accepted' ? 'Your match also accepted! They will text you soon.' : 'You have a new match!'} Meet at ${matchData.suggestedLocation} on ${new Date(matchData.suggestedTime.seconds * 1000).toLocaleDateString()} at ${new Date(matchData.suggestedTime.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}.`,
+        relatedUserId: userId,
+        relatedMatchId: matchId,
+        read: false,
+        createdAt: Timestamp.now()
+      };
+      batch.set(firstUserNotificationRef, firstUserNotification);
+    }
+    
+    // Update the match with the new status and acceptance info
+    const acceptedBy = matchData.acceptedBy || {};
+    acceptedBy[userId] = {
+      timestamp: Timestamp.now(),
+      isFirst: isFirstAcceptor
+    };
+    
+    // Update the match document
+    batch.update(matchRef, {
+      status: newStatus,
+      acceptedBy: acceptedBy
     });
     
-    // In a real app, we would also:
-    // 1. Create a confirmed meal event
-    // 2. Send notifications to both users
-    // 3. Update the UI to show confirmed meals
+    // Commit all changes
+    await batch.commit();
     
+    return { 
+      status: newStatus,
+      phoneNumber
+    };
   } catch (error) {
     console.error("Error accepting match:", error);
     throw new Error("Failed to accept meal match.");
@@ -588,5 +736,41 @@ export const declineMatch = async (userId: string, matchId: string): Promise<voi
   } catch (error) {
     console.error("Error declining match:", error);
     throw new Error("Failed to decline meal match.");
+  }
+};
+
+// Get user notifications
+export const getUserNotifications = async (userId: string): Promise<Notification[]> => {
+  try {
+    const q = query(
+      notificationsCollection,
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const notificationsSnapshot = await getDocs(q);
+    const notifications: Notification[] = [];
+    
+    notificationsSnapshot.forEach(doc => {
+      notifications.push({ id: doc.id, ...doc.data() } as Notification);
+    });
+    
+    return notifications;
+  } catch (error) {
+    console.error("Error getting user notifications:", error);
+    throw new Error("Failed to get notifications.");
+  }
+};
+
+// Mark notification as read
+export const markNotificationAsRead = async (notificationId: string): Promise<void> => {
+  try {
+    const notificationRef = doc(notificationsCollection, notificationId);
+    await updateDoc(notificationRef, {
+      read: true
+    });
+  } catch (error) {
+    console.error("Error marking notification as read:", error);
+    throw new Error("Failed to update notification.");
   }
 };

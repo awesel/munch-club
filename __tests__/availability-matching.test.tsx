@@ -1,22 +1,4 @@
-import { saveUserAvailability, findPotentialMatches } from '@/lib/api';
-
-// Mock the API functions
-jest.mock('@/lib/api', () => {
-  const originalModule = jest.requireActual('@/lib/api');
-  
-  return {
-    ...originalModule,
-    saveUserAvailability: jest.fn().mockImplementation(async (userId, weekDate, availability, isRepeating) => {
-      // Now call the mocked findPotentialMatches when this is called, to simulate our implementation
-      // We need to wait a tick to ensure the test can set up its expectations
-      setTimeout(() => {
-        originalModule.findPotentialMatches(userId);
-      }, 0);
-      return Promise.resolve();
-    }),
-    findPotentialMatches: jest.fn().mockResolvedValue([]),
-  };
-});
+import { saveUserAvailability, findPotentialMatches } from '@/__mocks__/lib/api';
 
 describe('Availability and Matching Integration', () => {
   beforeEach(() => {

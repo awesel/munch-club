@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import Button from '@/components/Button';
 import Spinner from '@/components/Spinner';
-import { saveUserSurvey, hasCompletedSurvey, UserSurveyData } from '@/lib/api';
+import { saveUserSurvey, hasCompletedSurvey, getUserProfile, UserSurveyData } from '@/lib/api';
 
 // Survey questions and options
 const surveyQuestions = [
@@ -80,6 +80,28 @@ const surveyQuestions = [
       'Get too serious too fast',
       'Criticize what I eat or say'
     ]
+  },
+  {
+    id: 'favoriteDiningHalls',
+    question: 'What are your favorite Stanford dining halls?',
+    description: 'Select all that apply:',
+    type: 'checkbox',
+    options: [
+      'Arrillaga Family Dining Commons',
+      'Stern Dining',
+      'Wilbur Dining',
+      'Lakeside Dining',
+      'Florence Moore (FloMo)',
+      'Gerhard Casper Dining Commons',
+      'Ricker Dining',
+      'Branner Dining'
+    ]
+  },
+  {
+    id: 'phoneNumber',
+    question: 'What\'s your phone number?',
+    description: 'We\'ll use this to notify you about matches. Numbers only, no spaces or special characters.',
+    type: 'text'
   }
 ];
 
@@ -90,6 +112,7 @@ export default function Survey() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nonStanfordEmail, setNonStanfordEmail] = useState(false);
+  const [isUpdatingExistingSurvey, setIsUpdatingExistingSurvey] = useState(false);
 
   // Initialize survey responses
   const [surveyResponses, setSurveyResponses] = useState<{
@@ -100,12 +123,14 @@ export default function Survey() {
     disagreementTolerance: '',
     conversationPace: '',
     foodPersonality: '',
-    companionPetPeeve: ''
+    companionPetPeeve: '',
+    favoriteDiningHalls: [],
+    phoneNumber: ''
   });
 
-  // Check if user has already completed the survey
+  // Check if user has already completed the survey and load their responses
   useEffect(() => {
-    const checkSurveyCompletion = async () => {
+    const checkSurveyAndLoadData = async () => {
       if (!user) return;
       
       try {
@@ -118,8 +143,17 @@ export default function Survey() {
         
         const completed = await hasCompletedSurvey(user.uid);
         if (completed) {
-          // If survey is already completed, redirect to availability page
-          router.push('/availability');
+          // Get existing survey data
+          const userProfile = await getUserProfile(user.uid);
+          if (userProfile?.surveyData) {
+            // Populate the form with existing data
+            setSurveyResponses(prev => ({
+              ...prev,
+              ...userProfile.surveyData
+            }));
+            setIsUpdatingExistingSurvey(true);
+          }
+          setIsLoading(false);
         } else {
           setIsLoading(false);
         }
@@ -131,7 +165,7 @@ export default function Survey() {
     };
 
     if (!authLoading && user) {
-      checkSurveyCompletion();
+      checkSurveyAndLoadData();
     } else if (!authLoading && !user) {
       // Redirect to home if not logged in
       router.push('/');
@@ -161,6 +195,23 @@ export default function Survey() {
     }));
   };
 
+  const handleTextChange = (questionId: string, value: string) => {
+    // For phoneNumber, only allow digits
+    if (questionId === 'phoneNumber') {
+      // Remove any non-digit characters
+      const digitsOnly = value.replace(/\D/g, '');
+      setSurveyResponses(prev => ({
+        ...prev,
+        [questionId]: digitsOnly
+      }));
+    } else {
+      setSurveyResponses(prev => ({
+        ...prev,
+        [questionId]: value
+      }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -171,6 +222,19 @@ export default function Survey() {
     if ((surveyResponses.mealTalkPreferences as string[]).length === 0) {
       isValid = false;
       errors.push("Please select at least one topic you enjoy talking about.");
+    }
+
+    if ((surveyResponses.favoriteDiningHalls as string[]).length === 0) {
+      isValid = false;
+      errors.push("Please select at least one favorite dining hall.");
+    }
+    
+    if (!surveyResponses.phoneNumber) {
+      isValid = false;
+      errors.push("Please enter your phone number.");
+    } else if ((surveyResponses.phoneNumber as string).length < 10) {
+      isValid = false;
+      errors.push("Please enter a valid phone number with at least 10 digits.");
     }
     
     for (const question of surveyQuestions) {
@@ -200,13 +264,15 @@ export default function Survey() {
         disagreementTolerance: surveyResponses.disagreementTolerance as string,
         conversationPace: surveyResponses.conversationPace as string,
         foodPersonality: surveyResponses.foodPersonality as string,
-        companionPetPeeve: surveyResponses.companionPetPeeve as string
+        companionPetPeeve: surveyResponses.companionPetPeeve as string,
+        favoriteDiningHalls: surveyResponses.favoriteDiningHalls as string[],
+        phoneNumber: surveyResponses.phoneNumber as string
       };
       
       await saveUserSurvey(user.uid, surveyData);
       
-      // Redirect to availability page after successful submission
-      router.push('/availability');
+      // Redirect to home page instead of availability
+      router.push('/');
     } catch (err) {
       console.error("Error submitting survey:", err);
       setError(err instanceof Error ? err.message : "Failed to submit your survey. Please try again.");
@@ -271,37 +337,48 @@ export default function Survey() {
                 )}
                 
                 <div className="space-y-2 mt-3">
-                  {question.options.map(option => (
-                    <div key={option} className="flex items-start">
-                      {question.type === 'checkbox' ? (
-                        <input
-                          type="checkbox"
-                          id={`${question.id}-${option}`}
-                          name={question.id}
-                          value={option}
-                          checked={(surveyResponses[question.id] as string[]).includes(option)}
-                          onChange={() => handleCheckboxChange(question.id, option)}
-                          className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        />
-                      ) : (
-                        <input
-                          type="radio"
-                          id={`${question.id}-${option}`}
-                          name={question.id}
-                          value={option}
-                          checked={surveyResponses[question.id] === option}
-                          onChange={() => handleRadioChange(question.id, option)}
-                          className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                        />
-                      )}
-                      <label
-                        htmlFor={`${question.id}-${option}`}
-                        className="ml-3 block text-gray-700 dark:text-gray-300"
-                      >
-                        {option}
-                      </label>
-                    </div>
-                  ))}
+                  {question.type === 'text' ? (
+                    <input
+                      type="text"
+                      id={question.id}
+                      name={question.id}
+                      value={surveyResponses[question.id] as string}
+                      onChange={(e) => handleTextChange(question.id, e.target.value)}
+                      className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  ) : (
+                    question.options?.map(option => (
+                      <div key={option} className="flex items-start">
+                        {question.type === 'checkbox' ? (
+                          <input
+                            type="checkbox"
+                            id={`${question.id}-${option}`}
+                            name={question.id}
+                            value={option}
+                            checked={(surveyResponses[question.id] as string[]).includes(option)}
+                            onChange={() => handleCheckboxChange(question.id, option)}
+                            className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                          />
+                        ) : (
+                          <input
+                            type="radio"
+                            id={`${question.id}-${option}`}
+                            name={question.id}
+                            value={option}
+                            checked={surveyResponses[question.id] === option}
+                            onChange={() => handleRadioChange(question.id, option)}
+                            className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                          />
+                        )}
+                        <label
+                          htmlFor={`${question.id}-${option}`}
+                          className="ml-3 block text-gray-700 dark:text-gray-300"
+                        >
+                          {option}
+                        </label>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             ))}

@@ -6,7 +6,7 @@ import { AuthProvider } from "@/context/AuthContext";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Meal App",
+  title: "Munch Club",
   description: "Coordinate meal plans",
 };
 

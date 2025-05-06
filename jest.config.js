@@ -1,4 +1,4 @@
-const nextJest = require("next/jest")();
+const nextJest = require("next/jest");
 
 /** @type {import('jest').Config} */
 const createJestConfig = nextJest({
@@ -14,8 +14,16 @@ const config = {
   moduleNameMapper: {
     // Handle module aliases (this will be automatically configured by next/jest)
     "^@/(.*)$": "<rootDir>/$1",
+    // Use explicit mocks
+    "^@/context/AuthContext$": "<rootDir>/__mocks__/context/AuthContext.tsx",
+    "^@/components/AvailabilityGrid$":
+      "<rootDir>/__mocks__/components/AvailabilityGrid.tsx",
+    "^@/lib/firebase$": "<rootDir>/__mocks__/lib/firebase.ts",
+    "^@/lib/api$": "<rootDir>/__mocks__/lib/api.ts",
   },
   testPathIgnorePatterns: ["<rootDir>/node_modules/", "<rootDir>/.next/"],
+  // Make sure tests in __mocks__ directories aren't detected as duplicates
+  modulePathIgnorePatterns: ["__tests__/__mocks__"],
 };
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
