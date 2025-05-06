@@ -250,7 +250,7 @@ export default function Survey() {
       <main className="pt-20 px-4 pb-12">
         <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Tell us about your lunch preferences
+            Tell us about your meal preferences
           </h1>
           
           {error && (

@@ -14,7 +14,6 @@ import {
   getMonday,
   formatDateKey
 } from '@/lib/api';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
 
 export default function AvailabilityPage() {
   const router = useRouter();
@@ -25,6 +24,8 @@ export default function AvailabilityPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isRepeating, setIsRepeating] = useState(true);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const monday = useMemo(() => getMonday(currentWeekDate), [currentWeekDate]);
   const weekStartDateKey = useMemo(() => formatDateKey(monday), [monday]);
@@ -32,13 +33,19 @@ export default function AvailabilityPage() {
   const fetchAvailability = useCallback(async () => {
     if (!user) return; // Don't fetch if user isn't loaded
     
-    console.log(`Fetching availability for user ${user.uid} and week starting ${weekStartDateKey}`);
+    console.log(`Fetching availability for user ${user.uid}`);
     setIsLoading(true);
     setError(null);
     setHasChanges(false);
     try {
+      // Try to get repeating availability first
       const data = await getUserAvailability(user.uid, currentWeekDate);
       setAvailability(data?.availability || {}); // Initialize with empty object if null
+      
+      // We always want to work with repeating availability
+      if (!data?.repeating) {
+        setIsRepeating(true);
+      }
     } catch (err) {
       console.error("Failed to fetch availability:", err);
       setError(err instanceof Error ? err.message : "Could not load availability data.");
@@ -46,9 +53,9 @@ export default function AvailabilityPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user, currentWeekDate, weekStartDateKey]);
+  }, [user, currentWeekDate]);
 
-  // Fetch data when user or week changes
+  // Fetch data when user changes
   useEffect(() => {
     if (!authLoading && user) {
       fetchAvailability();
@@ -77,29 +84,20 @@ export default function AvailabilityPage() {
     if (!user || !hasChanges) return;
     setIsSaving(true);
     setError(null);
+    setSuccessMessage(null);
     try {
-      await saveUserAvailability(user.uid, currentWeekDate, availability);
+      // Always save as repeating availability
+      await saveUserAvailability(user.uid, currentWeekDate, availability, true);
       setHasChanges(false); // Reset changes state on successful save
       console.log("Availability saved successfully.");
-      // Optionally show a success message
+      // Show success message and mention matches are being generated
+      setSuccessMessage("Your availability has been saved! We're generating meal matches based on your schedule.");
     } catch (err) {
       console.error("Failed to save availability:", err);
       setError(err instanceof Error ? err.message : "Could not save availability data.");
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const goToPreviousWeek = () => {
-    const prevWeek = new Date(currentWeekDate);
-    prevWeek.setDate(prevWeek.getDate() - 7);
-    setCurrentWeekDate(prevWeek);
-  };
-
-  const goToNextWeek = () => {
-    const nextWeek = new Date(currentWeekDate);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    setCurrentWeekDate(nextWeek);
   };
 
   // Render loading state or login prompt
@@ -131,38 +129,47 @@ export default function AvailabilityPage() {
       <main className="pt-20 px-4 pb-4">
         <div className="max-w-7xl mx-auto bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow">
           
-          {/* Week Navigation and Save Button */} 
+          {/* Header and Save Button */} 
           <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
             <div className="flex items-center gap-2">
-              <button 
-                onClick={goToPreviousWeek} 
-                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Previous week"
-                disabled={isLoading || isSaving}
-              >
-                <ChevronLeftIcon className="h-6 w-6 text-gray-600 dark:text-gray-300" />
-              </button>
               <span className="text-lg font-semibold text-gray-800 dark:text-gray-200 text-center">
-                Week of {monday.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+                Your Weekly Availability
               </span>
-              <button 
-                onClick={goToNextWeek} 
-                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Next week"
-                disabled={isLoading || isSaving}
-              >
-                <ChevronRightIcon className="h-6 w-6 text-gray-600 dark:text-gray-300" />
-              </button>
             </div>
-            <Button 
-              size="auto" 
-              onClick={handleSaveChanges} 
-              disabled={!hasChanges || isLoading || isSaving}
-              className="w-full sm:w-auto"
-            >
-              {isSaving ? <Spinner /> : 'Save Changes'}
-            </Button>
+            <div className="flex items-center gap-4 w-full sm:w-auto">
+              <Button 
+                size="auto" 
+                onClick={handleSaveChanges} 
+                disabled={!hasChanges || isLoading || isSaving}
+                className="w-full sm:w-auto"
+              >
+                {isSaving ? <Spinner /> : 'Save Changes'}
+              </Button>
+            </div>
           </div>
+
+          {/* Info text */}
+          <div className="mb-4 p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md">
+            <p className="text-sm">
+              <strong>Note:</strong> Set your availability once and we'll use this schedule for all future events and recommendations.
+            </p>
+          </div>
+
+          {/* Success Message */}
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md">
+              <p><strong>Success:</strong> {successMessage}</p>
+              <div className="mt-2">
+                <Button 
+                  size="auto" 
+                  onClick={() => router.push('/matches')}
+                  className="text-sm"
+                >
+                  View Matches
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Error Display */} 
           {error && (

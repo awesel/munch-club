@@ -4,14 +4,15 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getMonday, formatDateKey } from '@/lib/api'; // Import helpers
 
 // --- Configuration --- 
-const HOURS_START = 8; // 8 AM
-const HOURS_END = 18; // 6 PM (exclusive, so last slot is 17:30)
+const HOURS_START = 6; // 6 AM
+const HOURS_END = 22; // 10 PM (exclusive, so last slot is 21:30)
 const TIME_SLOT_MINUTES = 30;
 const DAYS_IN_WEEK = 7;
 // ---------------------
 
 interface TimeSlot {
-  time: string; // "HH:MM"
+  time: string; // "HH:MM" (military time for data storage)
+  displayTime: string; // "HH:MM AM/PM" (for display)
   dateTime: Date;
 }
 
@@ -42,6 +43,13 @@ const AvailabilityGrid: React.FC<AvailabilityGridProps> = ({
     setSelectedSlots(initialAvailability);
   }, [initialAvailability]);
 
+  // Helper function to convert 24h time to 12h time with AM/PM
+  const formatTime = (hours: number, minutes: number): string => {
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const hour12 = hours % 12 || 12; // Convert 0 to 12 for 12 AM
+    return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`;
+  };
+
   const { days, timeSlots } = useMemo(() => {
     const monday = getMonday(weekDate);
     const currentDays: DayColumn[] = [];
@@ -59,10 +67,13 @@ const AvailabilityGrid: React.FC<AvailabilityGridProps> = ({
 
     let currentTime = new Date(startTime);
     while (currentTime < endTime) {
-      const hours = currentTime.getHours().toString().padStart(2, '0');
-      const minutes = currentTime.getMinutes().toString().padStart(2, '0');
+      const hours = currentTime.getHours();
+      const minutes = currentTime.getMinutes();
+      const hoursStr = hours.toString().padStart(2, '0');
+      const minutesStr = minutes.toString().padStart(2, '0');
       slots.push({ 
-        time: `${hours}:${minutes}`, 
+        time: `${hoursStr}:${minutesStr}`, 
+        displayTime: formatTime(hours, minutes),
         dateTime: new Date(currentTime) // Store full date for potential future use
       });
       currentTime.setMinutes(currentTime.getMinutes() + TIME_SLOT_MINUTES);
@@ -158,7 +169,7 @@ const AvailabilityGrid: React.FC<AvailabilityGridProps> = ({
           <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
             {timeSlots.map((slot) => (
               <tr key={slot.time}>
-                <td className="sticky left-0 z-10 bg-white dark:bg-gray-900 w-24 px-2 py-1 text-xs font-mono text-gray-500 dark:text-gray-400 border-r border-gray-300 dark:border-gray-500">{slot.time}</td>
+                <td className="sticky left-0 z-10 bg-white dark:bg-gray-900 w-24 px-2 py-1 text-xs font-mono text-gray-500 dark:text-gray-400 border-r border-gray-300 dark:border-gray-500">{slot.displayTime}</td>
                 {days.map((day) => (
                   <td
                     key={`${day.dateKey}-${slot.time}`}

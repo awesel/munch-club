@@ -282,9 +282,11 @@ export interface WeeklyAvailabilityData {
   // Value: Array of available time slots (e.g., "HH:MM" in 24h format, like "09:00", "14:30")
   availability: Record<string, string[]>;
   userId: string; // Link to the user
+  repeating?: boolean; // Whether this is a repeating weekly schedule
 }
 
 const availabilityCollection = collection(db, "userAvailability");
+const repeatingAvailabilityDoc = 'repeating'; // Constant for the repeating availability document ID suffix
 
 // Helper to get Monday of a given date
 export const getMonday = (d: Date): Date => {
@@ -307,11 +309,26 @@ export const getUserAvailability = async (userId: string, weekDate: Date): Promi
   try {
     const docRef = doc(db, "userAvailability", docId);
     const docSnap = await getDoc(docRef);
+    
     if (docSnap.exists()) {
       // Basic validation might be good here
       return docSnap.data() as WeeklyAvailabilityData;
     } else {
-      return null; // No availability saved for this week
+      // If no specific week data found, try to get the repeating schedule
+      const repeatingDocId = `${userId}_${repeatingAvailabilityDoc}`;
+      const repeatingDocRef = doc(db, "userAvailability", repeatingDocId);
+      const repeatingDocSnap = await getDoc(repeatingDocRef);
+      
+      if (repeatingDocSnap.exists()) {
+        // If repeating schedule exists, use it but update the weekStartDate for the current week
+        const repeatingData = repeatingDocSnap.data() as WeeklyAvailabilityData;
+        return {
+          ...repeatingData,
+          weekStartDate: weekKey, // Use requested week's date
+        };
+      }
+      
+      return null; // No availability saved for this week or repeating
     }
   } catch (error) {
     console.error("Error getting user availability: ", error);
@@ -320,20 +337,49 @@ export const getUserAvailability = async (userId: string, weekDate: Date): Promi
 };
 
 // Save/update user availability for a specific week
-export const saveUserAvailability = async (userId: string, weekDate: Date, availability: Record<string, string[]>): Promise<void> => {
-  const monday = getMonday(weekDate);
-  const weekKey = formatDateKey(monday);
-  const docId = `${userId}_${weekKey}`; // Compound doc ID
-  const data: WeeklyAvailabilityData = {
-    userId: userId,
-    weekStartDate: weekKey,
-    availability: availability,
-  };
+export const saveUserAvailability = async (
+  userId: string, 
+  weekDate: Date, 
+  availability: Record<string, string[]>, 
+  isRepeating: boolean = false
+): Promise<void> => {
+  let docId: string;
+  let data: WeeklyAvailabilityData;
+  
+  if (isRepeating) {
+    // For repeating schedule, use special document ID
+    docId = `${userId}_${repeatingAvailabilityDoc}`;
+    data = {
+      userId: userId,
+      weekStartDate: 'repeating', // Special value for repeating schedule
+      availability: availability,
+      repeating: true
+    };
+  } else {
+    // For regular week-specific schedule
+    const monday = getMonday(weekDate);
+    const weekKey = formatDateKey(monday);
+    docId = `${userId}_${weekKey}`;
+    data = {
+      userId: userId,
+      weekStartDate: weekKey,
+      availability: availability,
+      repeating: false
+    };
+  }
+  
   try {
     const docRef = doc(db, "userAvailability", docId);
-    // Use setDoc with merge: true if you want partial updates, 
-    // but overwriting the whole week seems simpler for a When2Meet style
-    await setDoc(docRef, data); 
+    await setDoc(docRef, data);
+    
+    // After successfully saving availability, trigger the matching process
+    // We don't need to await this since we don't need to block the save operation
+    // on the completion of the matching process
+    findPotentialMatches(userId).catch(error => {
+      console.error("Error generating matches after saving availability:", error);
+      // We don't throw here since the availability was saved successfully
+      // and we don't want to fail the save operation if matching fails
+    });
   } catch (error) {
     console.error("Error saving user availability: ", error);
     throw new Error("Failed to save availability data.");
@@ -418,7 +464,7 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
       }
     });
     
-    // Get some sample lunch locations
+    // Get some meal locations
     const locationsSnapshot = await getDocs(locationsCollection);
     const locations: string[] = [];
     locationsSnapshot.forEach(doc => {
@@ -434,7 +480,7 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
       "The Axe & Palm"
     ];
     
-    const lunchLocations = locations.length > 0 ? locations : defaultLocations;
+    const mealLocations = locations.length > 0 ? locations : defaultLocations;
     
     // For demo purposes, we'll create matches with random users and times
     // In a real app, you'd use a more sophisticated matching algorithm
@@ -448,13 +494,13 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
       const randomDayIndex = Math.floor(Math.random() * availableDays.length);
       const matchDay = availableDays[randomDayIndex];
       
-      // Convert the date string to a Date object and set lunch hour (e.g., 12 PM)
+      // Convert the date string to a Date object and set meal hour (e.g., 12 PM)
       const [year, month, day] = matchDay.split('-').map(Number);
       const matchDate = new Date(year, month - 1, day, 12, 0); // noon
       
       // Pick a random location
-      const randomLocationIndex = Math.floor(Math.random() * lunchLocations.length);
-      const matchLocation = lunchLocations[randomLocationIndex];
+      const randomLocationIndex = Math.floor(Math.random() * mealLocations.length);
+      const matchLocation = mealLocations[randomLocationIndex];
       
       // Create a new match document
       const newMatch: Omit<Match, 'id'> = {
@@ -480,7 +526,7 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
     
   } catch (error) {
     console.error("Error finding potential matches:", error);
-    throw new Error("Failed to find lunch matches.");
+    throw new Error("Failed to find meal matches.");
   }
 };
 
@@ -507,13 +553,13 @@ export const acceptMatch = async (userId: string, matchId: string): Promise<void
     });
     
     // In a real app, we would also:
-    // 1. Create a confirmed lunch event
+    // 1. Create a confirmed meal event
     // 2. Send notifications to both users
-    // 3. Update the UI to show confirmed lunches
+    // 3. Update the UI to show confirmed meals
     
   } catch (error) {
     console.error("Error accepting match:", error);
-    throw new Error("Failed to accept lunch match.");
+    throw new Error("Failed to accept meal match.");
   }
 };
 
@@ -541,6 +587,6 @@ export const declineMatch = async (userId: string, matchId: string): Promise<voi
     
   } catch (error) {
     console.error("Error declining match:", error);
-    throw new Error("Failed to decline lunch match.");
+    throw new Error("Failed to decline meal match.");
   }
 };

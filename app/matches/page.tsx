@@ -91,7 +91,7 @@ export default function MatchesPage() {
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-        <Header title="Lunch Matches" showBackButton={true} />
+        <Header title="Meal Matches" showBackButton={true} />
         <Spinner role="status" />
       </div>
     );
@@ -99,11 +99,11 @@ export default function MatchesPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Header title="Lunch Matches" showBackButton={true} />
+      <Header title="Meal Matches" showBackButton={true} />
       <main className="pt-20 px-4 pb-8">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Your Suggested Lunch Matches
+            Your Suggested Meal Matches
           </h1>
           
           {error && (
@@ -115,7 +115,7 @@ export default function MatchesPage() {
           {matches.length === 0 && !isLoading && (
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow mb-4 text-center">
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                No lunch matches available right now. 
+                No meal matches available right now. 
                 Check back later or update your availability to find more matches!
               </p>
               <Button 
@@ -171,7 +171,7 @@ export default function MatchesPage() {
               </div>
               
               <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Lunch Details</h4>
+                <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Meal Details</h4>
                 <div className="text-gray-600 dark:text-gray-400 space-y-1">
                   <p><span className="font-medium">Date: </span>{new Date(match.suggestedTime.seconds * 1000).toLocaleDateString()}</p>
                   <p><span className="font-medium">Time: </span>{new Date(match.suggestedTime.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
