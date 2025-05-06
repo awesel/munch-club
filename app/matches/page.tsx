@@ -22,6 +22,8 @@ export default function MatchesPage() {
   const [matchedUser, setMatchedUser] = useState<string | null>(null);
   const [matchedLocation, setMatchedLocation] = useState<string | null>(null);
   const [matchedDate, setMatchedDate] = useState<string | null>(null);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -41,9 +43,12 @@ export default function MatchesPage() {
           return;
         }
 
-        // Get potential matches
-        const potentialMatches = await findPotentialMatches(user.uid);
-        setMatches(potentialMatches);
+        // Get potential matches but only if we don't already have matches
+        // This prevents regenerating matches every time the page loads
+        if (matches.length === 0) {
+          const potentialMatches = await findPotentialMatches(user.uid);
+          setMatches(potentialMatches);
+        }
       } catch (err) {
         console.error("Error fetching matches:", err);
         setError(err instanceof Error ? err.message : "Could not load matches. Please try again.");
@@ -58,7 +63,25 @@ export default function MatchesPage() {
       // Redirect to home if not logged in
       router.push('/');
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, matches.length]);
+
+  // Function to manually refresh matches
+  const refreshMatches = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const potentialMatches = await findPotentialMatches(user.uid);
+      setMatches(potentialMatches);
+    } catch (err) {
+      console.error("Error refreshing matches:", err);
+      setError(err instanceof Error ? err.message : "Could not refresh matches. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleAcceptMatch = async (matchId: string, matchUserName: string | null, location: string, dateTime: Date) => {
     if (!user) return;
@@ -74,9 +97,25 @@ export default function MatchesPage() {
         setMatchedLocation(location);
         setMatchedDate(dateTime.toLocaleDateString() + ' at ' + dateTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
         setShowPhoneModal(true);
+      } else {
+        // Show a success message that the match was accepted
+        setSuccessMessage('Match received! Waiting for the other person to accept.');
+        setShowSuccessMessage(true);
+        
+        // Update the match status in the UI instead of removing it
+        setMatches(prev => prev.map(match => 
+          match.id === matchId ? { ...match, status: 'accepted' } : match
+        ));
+        
+        // Hide the success message after 3 seconds
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 3000);
+        
+        return;
       }
       
-      // Remove from list or update UI
+      // Remove matched/completed match from the list
       setMatches(prev => prev.filter(match => match.id !== matchId));
     } catch (err) {
       console.error("Error accepting match:", err);
@@ -114,6 +153,44 @@ export default function MatchesPage() {
     );
   };
 
+  // Get status badge color and text
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return {
+          bg: 'bg-yellow-100 dark:bg-yellow-900/30',
+          text: 'text-yellow-800 dark:text-yellow-200',
+          label: 'New Match'
+        };
+      case 'accepted':
+        return {
+          bg: 'bg-blue-100 dark:bg-blue-900/30',
+          text: 'text-blue-800 dark:text-blue-200',
+          label: 'You Accepted'
+        };
+      case 'matched':
+        return {
+          bg: 'bg-green-100 dark:bg-green-900/30',
+          text: 'text-green-800 dark:text-green-200',
+          label: 'Complete'
+        };
+      default:
+        return {
+          bg: 'bg-gray-100 dark:bg-gray-700',
+          text: 'text-gray-800 dark:text-gray-200',
+          label: status
+        };
+    }
+  };
+
+  // Get priority score color
+  const getPriorityScoreColor = (score: number | undefined) => {
+    if (score === undefined) return 'bg-gray-200 dark:bg-gray-700';
+    if (score < 3) return 'bg-red-100 dark:bg-red-900/30';
+    if (score < 6) return 'bg-yellow-100 dark:bg-yellow-900/30';
+    return 'bg-green-100 dark:bg-green-900/30';
+  };
+
   // Render loading state
   if (authLoading || isLoading) {
     return (
@@ -129,9 +206,19 @@ export default function MatchesPage() {
       <Header title="Meal Matches" showBackButton={true} />
       <main className="pt-20 px-4 pb-8">
         <div className="max-w-3xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Your Suggested Meal Matches
-          </h1>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Your Suggested Meal Matches
+            </h1>
+            <Button
+              onClick={refreshMatches}
+              variant="secondary"
+              aria-label="Refresh matches"
+              className="text-sm px-3 py-1"
+            >
+              Refresh Matches
+            </Button>
+          </div>
           
           {error && (
             <div className="mb-6 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md">
@@ -139,11 +226,18 @@ export default function MatchesPage() {
             </div>
           )}
 
+          {/* Success Message */}
+          {showSuccessMessage && (
+            <div className="mb-6 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md animate-fade-in-out">
+              <p>{successMessage}</p>
+            </div>
+          )}
+
           {matches.length === 0 && !isLoading && (
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow mb-4 text-center">
               <p className="text-gray-600 dark:text-gray-400 mb-4">
                 No meal matches available right now. 
-                Check back later or update your availability to find more matches!
+                Click "Refresh Matches" or update your availability to find more matches!
               </p>
               <Button 
                 onClick={() => router.push('/availability')}
@@ -156,6 +250,7 @@ export default function MatchesPage() {
           
           {matches.map(match => {
             const matchDateTime = new Date(match.suggestedTime.seconds * 1000);
+            const statusBadge = getStatusBadge(match.status);
             
             return (
               <div key={match.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow mb-4">
@@ -171,37 +266,56 @@ export default function MatchesPage() {
                       <UserCircleIcon className="h-12 w-12 text-gray-500 dark:text-gray-400" />
                     )}
                     <div>
-                      <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {match.matchUser.displayName || 'User'}
-                      </h3>
+                      <div className="flex items-center">
+                        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mr-2">
+                          {match.matchUser.displayName || 'User'}
+                        </h3>
+                        <span className={`${statusBadge.bg} ${statusBadge.text} text-xs px-2 py-1 rounded-full`}>
+                          {statusBadge.label}
+                        </span>
+                      </div>
                       <p className="text-gray-500 dark:text-gray-400">
                         {match.matchUser.email?.split('@')[0]}
                       </p>
                     </div>
                   </div>
                   
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => handleDeclineMatch(match.id)}
-                      disabled={processingMatchId === match.id}
-                      className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full hover:bg-red-200 dark:hover:bg-red-800/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                      aria-label="Decline match"
-                    >
-                      <XMarkIcon className="h-6 w-6" />
-                    </button>
-                    <button
-                      onClick={() => handleAcceptMatch(
-                        match.id, 
-                        match.matchUser.displayName, 
-                        match.suggestedLocation,
-                        matchDateTime
-                      )}
-                      disabled={processingMatchId === match.id}
-                      className="p-2 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full hover:bg-green-200 dark:hover:bg-green-800/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                      aria-label="Accept match"
-                    >
-                      <CheckIcon className="h-6 w-6" />
-                    </button>
+                  <div className="flex space-x-2 items-center">
+                    {/* Priority Score Indicator */}
+                    {match.priorityScore !== undefined && (
+                      <div className="flex flex-col items-center mr-2">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${getPriorityScoreColor(match.priorityScore)}`}>
+                          <span className="text-xs font-semibold text-white">{match.priorityScore}</span>
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Match</span>
+                      </div>
+                    )}
+                    
+                    {match.status === 'pending' && (
+                      <>
+                        <button
+                          onClick={() => handleDeclineMatch(match.id)}
+                          disabled={processingMatchId === match.id}
+                          className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full hover:bg-red-200 dark:hover:bg-red-800/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                          aria-label="Decline match"
+                        >
+                          <XMarkIcon className="h-6 w-6" />
+                        </button>
+                        <button
+                          onClick={() => handleAcceptMatch(
+                            match.id, 
+                            match.matchUser.displayName, 
+                            match.suggestedLocation,
+                            matchDateTime
+                          )}
+                          disabled={processingMatchId === match.id}
+                          className="p-2 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full hover:bg-green-200 dark:hover:bg-green-800/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                          aria-label="Accept match"
+                        >
+                          <CheckIcon className="h-6 w-6" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 

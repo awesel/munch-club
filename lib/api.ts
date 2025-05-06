@@ -16,6 +16,7 @@ import {
   FirestoreError,
   setDoc,
   writeBatch,
+  increment,
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { User } from "firebase/auth"; // Import User type
@@ -389,6 +390,176 @@ export const saveUserAvailability = async (
   }
 };
 
+// --- Priority Score System --- 
+
+// New interface for priority score document
+export interface PriorityScore {
+  id?: string;
+  user1Id: string;
+  user2Id: string;
+  score: number; // 0-10 scale
+  lastUpdated: Timestamp;
+}
+
+const priorityScoreCollection = collection(db, "priorityScores");
+
+// Calculate baseline score based on survey agreement
+const calculateBaselineScore = (user1: UserProfile, user2: UserProfile): number => {
+  if (!user1.surveyData || !user2.surveyData) return 5; // Default middle score
+  
+  let points = 0;
+  let maxPoints = 0;
+  
+  // Compare meal talk preferences (0-1 points)
+  if (user1.surveyData.mealTalkPreferences && user2.surveyData.mealTalkPreferences) {
+    const overlappingPreferences = user1.surveyData.mealTalkPreferences.filter(
+      pref => user2.surveyData?.mealTalkPreferences.includes(pref)
+    );
+    const totalPreferences = new Set([
+      ...user1.surveyData.mealTalkPreferences,
+      ...user2.surveyData.mealTalkPreferences
+    ]).size;
+    
+    if (totalPreferences > 0) {
+      points += (overlappingPreferences.length / totalPreferences) * 2;
+    }
+    maxPoints += 2;
+  }
+  
+  // Compare conversation style (0-2 points)
+  if (user1.surveyData.conversationStyle && user2.surveyData.conversationStyle) {
+    if (user1.surveyData.conversationStyle === user2.surveyData.conversationStyle) {
+      points += 2;
+    }
+    maxPoints += 2;
+  }
+  
+  // Compare conversation pace (0-2 points)
+  if (user1.surveyData.conversationPace && user2.surveyData.conversationPace) {
+    if (user1.surveyData.conversationPace === user2.surveyData.conversationPace) {
+      points += 2;
+    }
+    maxPoints += 2;
+  }
+  
+  // Compare favorite dining halls (0-2 points)
+  if (user1.surveyData.favoriteDiningHalls && user2.surveyData.favoriteDiningHalls) {
+    const overlappingDiningHalls = user1.surveyData.favoriteDiningHalls.filter(
+      hall => user2.surveyData?.favoriteDiningHalls.includes(hall)
+    );
+    
+    if (overlappingDiningHalls.length > 0) {
+      points += Math.min(2, overlappingDiningHalls.length);
+    }
+    maxPoints += 2;
+  }
+  
+  // Compare food personality (0-2 points)
+  if (user1.surveyData.foodPersonality && user2.surveyData.foodPersonality) {
+    if (user1.surveyData.foodPersonality === user2.surveyData.foodPersonality) {
+      points += 2;
+    }
+    maxPoints += 2;
+  }
+  
+  // If not enough data for comparison, return middle score
+  if (maxPoints === 0) return 5;
+  
+  // Calculate final score (0-10 scale)
+  const normalizedScore = (points / maxPoints) * 10;
+  
+  // Return score between 3-7 to start, allowing room for future adjustments
+  return Math.max(3, Math.min(7, Math.round(normalizedScore)));
+};
+
+// Get priority score between two users
+export const getPriorityScore = async (userId1: string, userId2: string): Promise<number> => {
+  try {
+    // Ensure consistent ordering of user IDs to avoid duplicates
+    const [user1Id, user2Id] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1];
+    
+    // Check if score already exists
+    const q = query(
+      priorityScoreCollection,
+      where('user1Id', '==', user1Id),
+      where('user2Id', '==', user2Id)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (!querySnapshot.empty) {
+      // Return existing score
+      return querySnapshot.docs[0].data().score;
+    }
+    
+    // If no score exists, calculate baseline
+    const user1Profile = await getUserProfile(user1Id);
+    const user2Profile = await getUserProfile(user2Id);
+    
+    if (!user1Profile || !user2Profile) return 5; // Default middle score
+    
+    const baselineScore = calculateBaselineScore(user1Profile, user2Profile);
+    
+    // Save baseline score
+    await addDoc(priorityScoreCollection, {
+      user1Id,
+      user2Id,
+      score: baselineScore,
+      lastUpdated: Timestamp.now()
+    });
+    
+    return baselineScore;
+  } catch (error) {
+    console.error("Error getting priority score:", error);
+    return 5; // Default to middle priority if error
+  }
+};
+
+// Update priority score
+export const updatePriorityScore = async (userId1: string, userId2: string, adjustment: number): Promise<void> => {
+  try {
+    // Ensure consistent ordering of user IDs
+    const [user1Id, user2Id] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1];
+    
+    // Find existing score document
+    const q = query(
+      priorityScoreCollection,
+      where('user1Id', '==', user1Id),
+      where('user2Id', '==', user2Id)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      // If no score exists, calculate baseline and then apply adjustment
+      const baselineScore = await getPriorityScore(user1Id, user2Id);
+      
+      // Create new score with adjustment
+      await addDoc(priorityScoreCollection, {
+        user1Id,
+        user2Id,
+        score: Math.max(0, Math.min(10, baselineScore + adjustment)),
+        lastUpdated: Timestamp.now()
+      });
+    } else {
+      // Update existing score
+      const scoreDoc = querySnapshot.docs[0];
+      const currentScore = scoreDoc.data().score;
+      
+      // Ensure score stays within 0-10 range
+      const newScore = Math.max(0, Math.min(10, currentScore + adjustment));
+      
+      await updateDoc(doc(priorityScoreCollection, scoreDoc.id), {
+        score: newScore,
+        lastUpdated: Timestamp.now()
+      });
+    }
+  } catch (error) {
+    console.error("Error updating priority score:", error);
+    throw new Error("Failed to update match priority score.");
+  }
+};
+
 // --- Matches --- 
 
 export interface Match {
@@ -400,6 +571,7 @@ export interface Match {
   suggestedLocation: string;
   status: 'pending' | 'accepted' | 'matched' | 'declined';
   createdAt: Timestamp;
+  priorityScore?: number; // Add priority score
   acceptedBy?: {
     [userId: string]: {
       timestamp: Timestamp;
@@ -507,12 +679,20 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
     const currentUserProfile = await getUserProfile(userId);
     const userFavoriteDiningHalls = currentUserProfile?.surveyData?.favoriteDiningHalls || [];
     
-    // Sort available users by dining hall preference overlap
-    const usersWithOverlapInfo = await Promise.all(
+    // First check priority scores for all users
+    const usersWithPriorityScores = await Promise.all(
       availableUsers.map(async (user) => {
+        // Get priority score between users (uses baseline if none exists)
+        const priorityScore = await getPriorityScore(userId, user.uid);
+        
+        // Skip users with priority score of 0 (incompatible)
+        if (priorityScore === 0) {
+          return null;
+        }
+        
         // If user has no survey data, assume no overlap
         if (!user.surveyData?.favoriteDiningHalls) {
-          return { user, overlap: 0, diningHalls: [] };
+          return { user, overlap: 0, diningHalls: [], priorityScore };
         }
         
         // Find overlapping dining halls
@@ -524,25 +704,48 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
         return { 
           user, 
           overlap: overlappingDiningHalls.length,
-          diningHalls: overlappingDiningHalls.length > 0 ? overlappingDiningHalls : otherUserDiningHalls
+          diningHalls: overlappingDiningHalls.length > 0 ? overlappingDiningHalls : otherUserDiningHalls,
+          priorityScore
         };
       })
     );
     
-    // Sort users with most dining hall overlap first
-    usersWithOverlapInfo.sort((a, b) => b.overlap - a.overlap);
+    // Remove null entries (users with priority score of 0)
+    const filteredUsers = usersWithPriorityScores.filter(user => user !== null) as Array<{
+      user: UserProfile;
+      overlap: number;
+      diningHalls: string[];
+      priorityScore: number;
+    }>;
+    
+    // Sort by priority score (high to low) and then by dining hall overlap
+    filteredUsers.sort((a, b) => {
+      // First sort by priority score
+      if (b.priorityScore !== a.priorityScore) {
+        return b.priorityScore - a.priorityScore;
+      }
+      // Then sort by dining hall overlap
+      return b.overlap - a.overlap;
+    });
     
     // Limit to 3 matches for demo purposes
-    const usersToMatch = usersWithOverlapInfo.slice(0, 3);
+    const usersToMatch = filteredUsers.slice(0, 3);
     
-    for (const { user: otherUser, overlap, diningHalls } of usersToMatch) {
+    for (const { user: otherUser, overlap, diningHalls, priorityScore } of usersToMatch) {
       // Check if already in matches
       if (matchedUsers.includes(otherUser.uid)) continue;
       
+      // Get the other user's availability
+      const otherUserAvailability = await getUserAvailability(otherUser.uid, new Date());
+      
+      // Skip if the other user has no availability
+      if (!otherUserAvailability || Object.keys(otherUserAvailability.availability).length === 0) {
+        continue;
+      }
+      
       matchedUsers.push(otherUser.uid);
       
-      // FIXED: Instead of picking a random day, we need to find a time that the user is actually available
-      // Get a valid day and time from the user's availability
+      // Find overlapping availability between both users
       let validMatchFound = false;
       let matchDay = '';
       let matchTime = '';
@@ -552,12 +755,23 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
       const shuffledDays = [...availableDays].sort(() => 0.5 - Math.random());
       
       for (const day of shuffledDays) {
-        const availableTimes = userAvailability.availability[day];
+        // Skip if the current user has no availability for this day
+        const userTimesForDay = userAvailability.availability[day];
+        if (!userTimesForDay || userTimesForDay.length === 0) continue;
         
-        if (availableTimes && availableTimes.length > 0) {
-          // Pick a random time from the available times for this day
-          const randomTimeIndex = Math.floor(Math.random() * availableTimes.length);
-          matchTime = availableTimes[randomTimeIndex];
+        // Skip if the other user has no availability for this day
+        const otherUserTimesForDay = otherUserAvailability.availability[day] || [];
+        if (otherUserTimesForDay.length === 0) continue;
+        
+        // Find overlapping times
+        const overlappingTimes = userTimesForDay.filter(time => 
+          otherUserTimesForDay.includes(time)
+        );
+        
+        if (overlappingTimes.length > 0) {
+          // Pick a random time from the overlapping available times
+          const randomTimeIndex = Math.floor(Math.random() * overlappingTimes.length);
+          matchTime = overlappingTimes[randomTimeIndex];
           matchDay = day;
           
           // Parse the date and time
@@ -596,7 +810,8 @@ export const findPotentialMatches = async (userId: string): Promise<Match[]> => 
         suggestedTime: Timestamp.fromDate(matchDate),
         suggestedLocation: matchLocation,
         status: 'pending',
-        createdAt: Timestamp.now()
+        createdAt: Timestamp.now(),
+        priorityScore // Add priority score to the match
       };
       
       // Save the match to Firestore
@@ -670,6 +885,9 @@ export const acceptMatch = async (userId: string, matchId: string): Promise<{sta
         phoneNumber = otherUserProfile.surveyData.phoneNumber;
       }
       
+      // Update priority score - increase significantly for successful match (+3)
+      await updatePriorityScore(userId, otherUserId, 3);
+      
       // Create notification for first user
       const firstUserNotificationRef = doc(notificationsCollection);
       const firstUserNotification: Notification = {
@@ -683,6 +901,9 @@ export const acceptMatch = async (userId: string, matchId: string): Promise<{sta
         createdAt: Timestamp.now()
       };
       batch.set(firstUserNotificationRef, firstUserNotification);
+    } else {
+      // This is the first user accepting, increase priority score slightly (+1)
+      await updatePriorityScore(userId, otherUserId, 1);
     }
     
     // Update the match with the new status and acceptance info
@@ -721,12 +942,18 @@ export const declineMatch = async (userId: string, matchId: string): Promise<voi
       throw new Error("Match not found");
     }
     
-    const matchData = matchDoc.data();
+    const matchData = matchDoc.data() as Match;
     
     // Verify this match belongs to the user
-    if (matchData.userId !== userId) {
+    if (matchData.userId !== userId && matchData.matchUserId !== userId) {
       throw new Error("You don't have permission to decline this match");
     }
+    
+    // Get the other user's ID
+    const otherUserId = matchData.userId === userId ? matchData.matchUserId : matchData.userId;
+    
+    // Update priority score - decrease for declined match (-1)
+    await updatePriorityScore(userId, otherUserId, -1);
     
     // Update match status
     await updateDoc(matchRef, {
