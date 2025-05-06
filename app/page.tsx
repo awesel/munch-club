@@ -64,8 +64,8 @@ export default function DashboardPage() {
       <Header title="Meal App" />
       <main className="flex flex-col items-center justify-center pt-24 px-4">
         <div className="max-w-3xl text-center mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
-            Connect Over Meal at Stanford
+          <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            Stop eating alone. Find who's free on munch club
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
             Meet new people, have great conversations, and enjoy a meal together.
