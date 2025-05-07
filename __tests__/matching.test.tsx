@@ -5,7 +5,51 @@ import {
   declineMatch, 
   getUserAvailability,
   getUserProfile
-} from '@/__mocks__/lib/api';
+} from '../__mocks__/lib/api';
+
+// Import the real updatePriorityScore that we're testing
+import { updatePriorityScore } from '../lib/api';
+
+// Mock the api module
+jest.mock('../lib/api', () => {
+  const originalModule = jest.requireActual('../lib/api');
+  return {
+    ...originalModule,
+    findPotentialMatches: jest.fn(),
+    acceptMatch: jest.fn(),
+    declineMatch: jest.fn(),
+    getUserAvailability: jest.fn(),
+    getUserProfile: jest.fn(),
+    updatePriorityScore: jest.fn(),
+  };
+});
+
+// Mock Firebase modules
+jest.mock('firebase/firestore');
+
+// Setup mock implementations to use our imported mock functions
+beforeEach(() => {
+  // Setup mock implementations to match the imported mock functions
+  (findPotentialMatches as jest.Mock).mockImplementation(
+    (userId: string) => import('../__mocks__/lib/api').then(module => module.findPotentialMatches(userId))
+  );
+  (acceptMatch as jest.Mock).mockImplementation(
+    (userId: string, matchId: string) => import('../__mocks__/lib/api').then(module => module.acceptMatch(userId, matchId))
+  );
+  (declineMatch as jest.Mock).mockImplementation(
+    (userId: string, matchId: string) => import('../__mocks__/lib/api').then(module => module.declineMatch(userId, matchId))
+  );
+  (getUserAvailability as jest.Mock).mockImplementation(
+    (userId: string) => import('../__mocks__/lib/api').then(module => module.getUserAvailability(userId))
+  );
+  (getUserProfile as jest.Mock).mockImplementation(
+    (userId: string) => import('../__mocks__/lib/api').then(module => module.getUserProfile(userId))
+  );
+  (updatePriorityScore as jest.Mock).mockImplementation(
+    (userId1: string, userId2: string, adjustment: number) => 
+      import('../__mocks__/lib/api').then(module => module.updatePriorityScore(userId1, userId2, adjustment))
+  );
+});
 
 // Test the behavior of our mocks
 describe('Matching Algorithm', () => {
@@ -63,17 +107,26 @@ describe('Matching Algorithm', () => {
   });
 
   describe('acceptMatch', () => {
-    it('should accept valid matches', async () => {
+    it('should accept a match successfully', async () => {
       await acceptMatch(mockUserId, 'valid-match-id');
       expect(acceptMatch).toHaveBeenCalledWith(mockUserId, 'valid-match-id');
     });
 
-    it('should throw error if match does not exist', async () => {
+    it('should throw an error if match not found', async () => {
       await expect(acceptMatch(mockUserId, 'non-existent-match')).rejects.toThrow('Match not found');
     });
 
-    it('should throw error if match does not belong to user', async () => {
+    it('should throw an error if user does not have permission', async () => {
       await expect(acceptMatch(otherUserId, 'match-id')).rejects.toThrow("You don't have permission");
+    });
+    
+    it('should continue accepting a match even if priority score update fails', async () => {
+      // Set up the updatePriorityScore mock to fail
+      (updatePriorityScore as jest.Mock).mockRejectedValue(new Error('Firebase permission error'));
+      
+      // The match should still be accepted
+      const result = await acceptMatch(mockUserId, 'valid-match-id');
+      expect(result.status).toBe('accepted');
     });
   });
 

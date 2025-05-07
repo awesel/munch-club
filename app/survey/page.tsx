@@ -272,7 +272,7 @@ export default function Survey() {
       await saveUserSurvey(user.uid, surveyData);
       
       // Redirect to home page instead of availability
-      router.push('/');
+      router.push('/availability');
     } catch (err) {
       console.error("Error submitting survey:", err);
       setError(err instanceof Error ? err.message : "Failed to submit your survey. Please try again.");

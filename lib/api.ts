@@ -556,7 +556,8 @@ export const updatePriorityScore = async (userId1: string, userId2: string, adju
     }
   } catch (error) {
     console.error("Error updating priority score:", error);
-    throw new Error("Failed to update match priority score.");
+    // Don't throw an error - log it and allow the calling function to continue
+    // This prevents priority score updates from blocking critical operations like match acceptance
   }
 };
 
@@ -886,13 +887,11 @@ export const acceptMatch = async (userId: string, matchId: string): Promise<{sta
       }
       
       // Try to update priority score but don't let it block the match
-      try {
-        // Update priority score - increase significantly for successful match (+3)
-        await updatePriorityScore(userId, otherUserId, 3);
-      } catch (error) {
-        console.error("Error updating priority score:", error);
-        // Continue execution even if priority score update fails
-      }
+      // Update priority score - increase significantly for successful match (+3)
+      // The updatePriorityScore function now handles errors internally
+      updatePriorityScore(userId, otherUserId, 3).catch(error => {
+        console.error("Error updating priority score during match acceptance:", error);
+      });
       
       // Create notification for first user
       const firstUserNotificationRef = doc(notificationsCollection);
@@ -908,14 +907,11 @@ export const acceptMatch = async (userId: string, matchId: string): Promise<{sta
       };
       batch.set(firstUserNotificationRef, firstUserNotification);
     } else {
-      // Try to update priority score but don't let it block the match
-      try {
-        // This is the first user accepting, increase priority score slightly (+1)
-        await updatePriorityScore(userId, otherUserId, 1);
-      } catch (error) {
-        console.error("Error updating priority score:", error);
-        // Continue execution even if priority score update fails
-      }
+      // This is the first user accepting, increase priority score slightly (+1)
+      // The updatePriorityScore function now handles errors internally
+      updatePriorityScore(userId, otherUserId, 1).catch(error => {
+        console.error("Error updating priority score during match acceptance:", error);
+      });
     }
     
     // Update the match with the new status and acceptance info
@@ -964,14 +960,11 @@ export const declineMatch = async (userId: string, matchId: string): Promise<voi
     // Get the other user's ID
     const otherUserId = matchData.userId === userId ? matchData.matchUserId : matchData.userId;
     
-    // Try to update priority score but don't let it block declining the match
-    try {
-      // Update priority score - decrease for declined match (-1)
-      await updatePriorityScore(userId, otherUserId, -1);
-    } catch (error) {
-      console.error("Error updating priority score:", error);
-      // Continue execution even if priority score update fails
-    }
+    // Update priority score - decrease for declined match (-1)
+    // The updatePriorityScore function now handles errors internally
+    updatePriorityScore(userId, otherUserId, -1).catch(error => {
+      console.error("Error updating priority score during match decline:", error);
+    });
     
     // Update match status
     await updateDoc(matchRef, {

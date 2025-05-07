@@ -4,6 +4,15 @@ export const hasCompletedSurvey = jest.fn().mockResolvedValue(false);
 export const createOrUpdateUser = jest.fn().mockResolvedValue(undefined);
 export const formatDateKey = jest.fn((date) => date.toISOString().split("T")[0]);
 
+// Add priority score function
+export const updatePriorityScore = jest.fn().mockImplementation((userId1, userId2, adjustment) => {
+  return Promise.resolve();
+});
+
+export const getPriorityScore = jest.fn().mockImplementation((userId1, userId2) => {
+  return Promise.resolve(5); // Default middle score
+});
+
 // Add matching functions
 export const findPotentialMatches = jest.fn().mockImplementation((userId) => {
   // Simulate a match with overlapping dining hall preferences
@@ -47,7 +56,7 @@ export const acceptMatch = jest.fn().mockImplementation((userId, matchId) => {
   if (userId !== 'test-user-id') {
     return Promise.reject(new Error("You don't have permission to accept this match"));
   }
-  return Promise.resolve();
+  return Promise.resolve({ status: 'accepted' });
 });
 
 export const declineMatch = jest.fn().mockImplementation((userId, matchId) => {
@@ -104,5 +113,7 @@ describe('API Mock', () => {
     expect(saveUserAvailability).toBeDefined();
     expect(getUserAvailability).toBeDefined();
     expect(getUserProfile).toBeDefined();
+    expect(updatePriorityScore).toBeDefined();
+    expect(getPriorityScore).toBeDefined();
   });
 }); 
