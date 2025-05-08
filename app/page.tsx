@@ -219,7 +219,7 @@ export default function DashboardPage() {
       <Header title="Munch Club" />
       <main className="pt-16 px-4 pb-8">
         {!user ? (
-          <div className="flex flex-col items-center text-center px-4">
+          <div className="flex flex-col items-center text-center px-4 pt-12 sm:pt-16 md:pt-20">
             <div className="max-w-2xl">
               {/* Optional: Add a relevant Heroicon here if desired, e.g., UsersIcon or ChatBubbleOvalLeftEllipsisIcon */}
               {/* <UsersIcon className="w-24 h-24 text-indigo-500 mx-auto mb-6" /> */}
