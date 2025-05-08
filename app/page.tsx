@@ -217,7 +217,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       <Header title="Munch Club" />
-      <main className="pt-20 px-4 pb-8">
+      <main className="pt-16 px-4 pb-8">
         {!user ? (
           <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center px-4">
             <div className="max-w-2xl">
