@@ -102,6 +102,12 @@ const surveyQuestions = [
     question: 'What\'s your phone number?',
     description: 'We\'ll use this to notify you about matches. Numbers only, no spaces or special characters.',
     type: 'text'
+  },
+  {
+    id: 'friendEmails',
+    question: 'What are the Stanford emails of friends you want to munch with?',
+    description: 'Enter their Stanford emails, separated by commas. (e.g. friend1@stanford.edu, friend2@stanford.edu)',
+    type: 'text'
   }
 ];
 
@@ -125,7 +131,8 @@ export default function Survey() {
     foodPersonality: '',
     companionPetPeeve: '',
     favoriteDiningHalls: [],
-    phoneNumber: ''
+    phoneNumber: '',
+    friendEmails: ''
   });
 
   // Check if user has already completed the survey and load their responses
@@ -266,7 +273,8 @@ export default function Survey() {
         foodPersonality: surveyResponses.foodPersonality as string,
         companionPetPeeve: surveyResponses.companionPetPeeve as string,
         favoriteDiningHalls: surveyResponses.favoriteDiningHalls as string[],
-        phoneNumber: surveyResponses.phoneNumber as string
+        phoneNumber: surveyResponses.phoneNumber as string,
+        friendEmails: surveyResponses.friendEmails ? (surveyResponses.friendEmails as string).split(',').map(email => email.trim()).filter(email => email.endsWith('@stanford.edu')) : []
       };
       
       await saveUserSurvey(user.uid, surveyData);

@@ -31,6 +31,7 @@ const MockSurvey = () => (
     <div>What do you enjoy talking about over a meal?</div>
     <div>What's your phone number?</div>
     <div>What are your favorite Stanford dining halls?</div>
+    <div>What are the Stanford emails of friends you want to munch with?</div>
   </div>
 );
 
@@ -45,6 +46,7 @@ describe('Survey Page', () => {
     expect(screen.getByText(/What do you enjoy talking about over a meal?/i)).toBeInTheDocument();
     expect(screen.getByText(/What's your phone number?/i)).toBeInTheDocument();
     expect(screen.getByText(/What are your favorite Stanford dining halls?/i)).toBeInTheDocument();
+    expect(screen.getByText(/What are the Stanford emails of friends you want to munch with?/i)).toBeInTheDocument();
   });
   
   test('phone number and dining halls fields are included', () => {
@@ -53,5 +55,6 @@ describe('Survey Page', () => {
     // Verify our new fields are in the survey
     expect(screen.getByText(/What's your phone number?/i)).toBeInTheDocument();
     expect(screen.getByText(/What are your favorite Stanford dining halls?/i)).toBeInTheDocument();
+    expect(screen.getByText(/What are the Stanford emails of friends you want to munch with?/i)).toBeInTheDocument();
   });
 }); 

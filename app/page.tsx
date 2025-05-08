@@ -54,11 +54,11 @@ export default function DashboardPage() {
         const profile = await getUserProfile(user.uid);
         setCurrentProfile(profile);
 
-        // Get potential matches
-        if (matches.length === 0) {
-          const potentialMatches = await findPotentialMatches(user.uid);
-          setMatches(potentialMatches);
-        }
+        // Get potential matches - REMOVED AUTOMATIC FETCH
+        // if (matches.length === 0) {
+        //   const potentialMatches = await findPotentialMatches(user.uid);
+        //   setMatches(potentialMatches);
+        // }
 
       } catch (err) {
         console.error("Error checking user status or fetching matches:", err);
@@ -71,7 +71,7 @@ export default function DashboardPage() {
     if (!authLoading) {
       checkUserStatusAndFetchMatches();
     }
-  }, [user, authLoading, router, matches.length]);
+  }, [user, authLoading, router]); // Removed matches.length from dependencies
 
   // Function to manually refresh matches
   const refreshMatches = async () => {
@@ -162,7 +162,7 @@ export default function DashboardPage() {
   };
 
   // Get status badge color and text
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: Match['status']) => {
     switch (status) {
       case 'pending':
         return {
@@ -170,11 +170,17 @@ export default function DashboardPage() {
           text: 'text-yellow-800 dark:text-yellow-200',
           label: 'New Match'
         };
+      case 'declined':
+        return {
+          bg: 'bg-red-100 dark:bg-red-700/30',
+          text: 'text-red-700 dark:text-red-200',
+          label: 'Declined'
+        };
       case 'accepted':
         return {
           bg: 'bg-blue-100 dark:bg-blue-900/30',
           text: 'text-blue-800 dark:text-blue-200',
-          label: 'You Accepted'
+          label: 'Accepted'
         };
       case 'matched':
         return {
@@ -213,21 +219,22 @@ export default function DashboardPage() {
       <Header title="Munch Club" />
       <main className="pt-20 px-4 pb-8">
         {!user ? (
-          <div className="flex flex-col items-center justify-center pt-24 px-4">
-            <div className="max-w-3xl text-center mb-8">
-              <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
-                Stop eating alone. Find who's free on munch club
+          <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center px-4">
+            <div className="max-w-2xl">
+              {/* Optional: Add a relevant Heroicon here if desired, e.g., UsersIcon or ChatBubbleOvalLeftEllipsisIcon */}
+              {/* <UsersIcon className="w-24 h-24 text-indigo-500 mx-auto mb-6" /> */}
+              <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6">
+                Hungry for Connection?
               </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-                Meet new people, have great conversations, and enjoy a meal together.
-                Sign in with your Stanford email to get started.
+              <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 mb-8">
+                Welcome to <span className="font-semibold text-indigo-600 dark:text-indigo-400">Munch Club</span>!
+                Don't dine alone. We help you connect with fellow Stanford affiliates for shared meals, engaging conversations, and new friendships.
               </p>
-            </div>
-            <div className="w-full max-w-md space-y-4 flex flex-col items-center">
-              <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">
-                Please sign in with Google using your Stanford email account
+              <p className="text-md text-gray-600 dark:text-gray-400">
+                Sign in with your Stanford email to discover who's free to munch!
               </p>
-              {/* Sign-in button is in the header */}
+              {/* The Sign-in button is in the Header, so no explicit button needed here, 
+                  but the text above guides the user. */}
             </div>
           </div>
         ) : (
@@ -294,11 +301,49 @@ export default function DashboardPage() {
 
             {matches.map(match => {
               const matchDateTime = new Date(match.suggestedTime.seconds * 1000);
-              const badge = getStatusBadge(match.status || 'pending');
               const mutualFavorite = isMutualFavorite(match);
+
+              const currentUserAcceptedThisMatch = !!(user && match.acceptedBy && match.acceptedBy[user.uid]);
               
+              let statusKeyForBadge: Match['status'] = match.status;
+              let statusText = '';
+              let badgeLabel = '';
+
+              if (match.status === 'pending') {
+                badgeLabel = 'New Match';
+                statusText = 'Awaiting action.';
+              } else if (match.status === 'accepted') {
+                if (currentUserAcceptedThisMatch) {
+                  badgeLabel = 'You Accepted';
+                  statusText = `Waiting for ${match.matchUser?.displayName || 'your match'} to respond.`;
+                } else {
+                  badgeLabel = `${match.matchUser?.displayName || 'Your match'} Accepted`;
+                  statusText = `${match.matchUser?.displayName || 'Your match'} has accepted. Please respond.`;
+                }
+              } else if (match.status === 'matched') {
+                badgeLabel = 'Complete';
+                statusText = `It's a Match with ${match.matchUser?.displayName || 'your match'}!`;
+                // Also, prepare phone number text if available
+                const matchedUserPhoneNumber = match.matchUser?.surveyData?.phoneNumber;
+                if (matchedUserPhoneNumber) {
+                  statusText += ` Contact: ${matchedUserPhoneNumber}`;
+                }
+              } else if (match.status === 'declined') {
+                badgeLabel = 'Declined';
+                statusText = 'This match was declined.';
+              } else {
+                badgeLabel = match.status || 'Unknown';
+                statusKeyForBadge = 'pending';
+              }
+              
+              const badgeProps = getStatusBadge(statusKeyForBadge);
+              badgeProps.label = badgeLabel;
+
+              // Determine if action buttons should be shown
+              const showActionButtons = (match.status === 'pending') || (match.status === 'accepted' && !currentUserAcceptedThisMatch);
+
               return (
-                <div key={match.id} className="bg-white dark:bg-gray-800 p-5 rounded-lg shadow mb-4">
+                <div key={match.id} className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-4 mb-4">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center">
                       {match.matchUser.photoURL ? (
@@ -313,8 +358,8 @@ export default function DashboardPage() {
                         </p>
                       </div>
                     </div>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${badge.bg} ${badge.text}`}>
-                      {badge.label}
+                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${badgeProps.bg} ${badgeProps.text}`}>
+                      {badgeProps.label}
                     </span>
                   </div>
 
@@ -344,7 +389,11 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {(match.status === 'pending' || match.status === undefined) && (
+                  {statusText && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 mb-3 whitespace-pre-wrap">{statusText}</p>
+                  )}
+
+                  {(showActionButtons) && (
                     <div className="flex space-x-3">
                       <Button
                         onClick={() => handleAcceptMatch(match.id, match.matchUser.displayName, match.suggestedLocation, matchDateTime)}
@@ -365,10 +414,6 @@ export default function DashboardPage() {
                       </Button>
                     </div>
                   )}
-                  {match.status === 'accepted' && (
-                     <p className="text-sm text-blue-600 dark:text-blue-400">Waiting for other person to respond.</p>
-                  )}
-
                 </div>
               );
             })}

@@ -162,6 +162,7 @@ export interface UserSurveyData {
   companionPetPeeve: string;
   favoriteDiningHalls: string[];
   phoneNumber: string;
+  friendEmails?: string[];
 }
 
 const usersCollection = collection(db, "users");
@@ -379,11 +380,11 @@ export const saveUserAvailability = async (
     // After successfully saving availability, trigger the matching process
     // We don't need to await this since we don't need to block the save operation
     // on the completion of the matching process
-    findPotentialMatches(userId).catch(error => {
-      console.error("Error generating matches after saving availability:", error);
-      // We don't throw here since the availability was saved successfully
-      // and we don't want to fail the save operation if matching fails
-    });
+    // findPotentialMatches(userId).catch(error => {
+    //   console.error("Error generating matches after saving availability:", error);
+    //   // We don't throw here since the availability was saved successfully
+    //   // and we don't want to fail the save operation if matching fails
+    // });
   } catch (error) {
     console.error("Error saving user availability: ", error);
     throw new Error("Failed to save availability data.");
